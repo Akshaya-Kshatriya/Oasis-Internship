@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Secure Chat</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <aside class="sidebar">
+        <div class="branding">
+          <h1>Secure Chat</h1>
+          <p class="tagline">Team messaging with privacy</p>
+        </div>
+        <section class="auth-panel" id="auth-panel">
+          <h2>Sign In</h2>
+          <form id="login-form" autocomplete="off">
+            <label>
+              Username
+              <input type="text" id="login-username" name="username" required />
+            </label>
+            <label>
+              Password
+              <input type="password" id="login-password" name="password" required />
+            </label>
+            <button type="submit">Login</button>
+          </form>
+          <p class="muted">Need an account?</p>
+          <form id="register-form" autocomplete="off">
+            <label>
+              Username
+              <input type="text" id="register-username" name="username" required />
+            </label>
+            <label>
+              Password
+              <input type="password" id="register-password" name="password" required />
+            </label>
+            <button type="submit">Register</button>
+          </form>
+        </section>
+        <section class="rooms-panel hidden" id="rooms-panel">
+          <div class="user-meta">
+            <span id="active-username"></span>
+            <button id="logout-btn" class="ghost">Logout</button>
+          </div>
+          <h2>Rooms</h2>
+          <ul id="rooms-list"></ul>
+        </section>
+      </aside>
+      <main class="chat-panel">
+        <header class="chat-header">
+          <div>
+            <h2 id="room-title">Select a room to start chatting</h2>
+            <p id="room-topic" class="muted"></p>
+          </div>
+          <div class="status-group">
+            <span id="connection-status" class="status offline">Offline</span>
+          </div>
+        </header>
+        <section class="messages" id="messages"></section>
+        <footer class="composer">
+          <form id="message-form">
+            <div class="composer-tools">
+              <button type="button" id="emoji-btn" title="Emoji">😊</button>
+              <input type="file" id="file-input" accept="image/*,video/*,.pdf,.doc,.docx,.ppt,.pptx" hidden />
+              <button type="button" id="file-btn" title="Attach file">📎</button>
+            </div>
+            <textarea id="message-input" placeholder="Type a message..." rows="1"></textarea>
+            <button type="submit" class="primary">Send</button>
+          </form>
+          <div id="emoji-picker" class="emoji-picker hidden" role="menu"></div>
+        </footer>
+      </main>
+    </div>
+
+    <template id="message-template">
+      <article class="message">
+        <div class="message-meta">
+          <span class="message-author"></span>
+          <time class="message-time"></time>
+        </div>
+        <div class="message-body"></div>
+      </article>
+    </template>
+
+    <script type="module" src="/static/app.js"></script>
+  </body>
+</html>
+
+
