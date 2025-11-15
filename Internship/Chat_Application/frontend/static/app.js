@@ -1,4 +1,4 @@
-const API_BASE = "";
+const API_BASE = "http://localhost:8000";
 const WS_PATH = "/ws/rooms";
 const STORAGE_TOKEN_KEY = "secure-chat-token";
 const STORAGE_USER_KEY = "secure-chat-username";
@@ -139,13 +139,33 @@ function renderRooms(rooms) {
 function appendMessage(message, { suppressNotify = false } = {}) {
   // For non-system messages, check if we've already displayed this message
   if (message.id && message.message_type !== "system") {
-    if (state.displayedMessageIds.has(message.id)) {
+    // Convert message.id to string for comparison
+    const messageIdStr = String(message.id);
+    const isTempMessage = messageIdStr.startsWith("temp-");
+    
+    // Skip if already displayed (unless it's a temp message)
+    if (!isTempMessage && state.displayedMessageIds.has(message.id)) {
       return; // Already displayed, skip
+    }
+    // If we have a temp message with same content from same user, remove it
+    if (!isTempMessage) {
+      const tempMessages = elements.messages.querySelectorAll(`[data-message-id^="temp-"]`);
+      tempMessages.forEach(tempMsg => {
+        const tempContent = tempMsg.querySelector(".message-body")?.textContent?.trim();
+        const tempAuthor = tempMsg.querySelector(".message-author")?.textContent?.trim();
+        if (tempContent === message.content && tempAuthor === message.username) {
+          tempMsg.remove();
+        }
+      });
     }
     state.displayedMessageIds.add(message.id);
   }
 
   const node = elements.messageTemplate.content.firstElementChild.cloneNode(true);
+  // Add data attribute for message ID to help with optimistic updates
+  if (message.id) {
+    node.setAttribute("data-message-id", String(message.id));
+  }
   const author = node.querySelector(".message-author");
   const time = node.querySelector(".message-time");
   const body = node.querySelector(".message-body");
@@ -205,15 +225,19 @@ function appendMessage(message, { suppressNotify = false } = {}) {
 function clearMessages() {
   elements.messages.innerHTML = "";
   state.displayedMessageIds.clear(); // Clear tracked message IDs when clearing messages
+  state.recentSystemMessages.clear(); // Also clear system message tracking
 }
 
 async function loadRooms() {
   try {
     const rooms = await apiRequest("/rooms");
     renderRooms(rooms);
-    // Only auto-select if we don't have a current room and we're not restoring a session
+    // Auto-select General room if no room is currently selected
     if (!state.currentRoomId && rooms.length) {
-      // Don't auto-select - let user choose
+      const generalRoom = rooms.find(room => room.name.toLowerCase() === "general") || rooms[0];
+      if (generalRoom) {
+        await selectRoom(generalRoom);
+      }
     }
   } catch (error) {
     showError(error.message);
@@ -222,10 +246,15 @@ async function loadRooms() {
 
 async function loadHistory(roomId) {
   try {
+    console.log("Loading message history for room:", roomId);
     const messages = await apiRequest(`/rooms/${roomId}/messages`);
+    console.log("Loaded messages:", messages.length);
     clearMessages();
-    messages.forEach((message) => appendMessage(message, { suppressNotify: true }));
+    messages.forEach((message) => {
+      appendMessage(message, { suppressNotify: true });
+    });
   } catch (error) {
+    console.error("Error loading history:", error);
     showError(error.message);
   }
 }
@@ -236,9 +265,20 @@ function connectWebSocket(roomId) {
     return; // Already connected to this room
   }
 
-  const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-  const host = window.location.host;
+  // Check if we have a token
+  if (!state.token) {
+    console.error("Cannot connect WebSocket: No authentication token");
+    showError("Not authenticated. Please log in again.");
+    return;
+  }
+
+  // Use API_BASE to construct WebSocket URL (backend host, not frontend host)
+  const apiUrl = new URL(API_BASE);
+  const protocol = apiUrl.protocol === "https:" ? "wss" : "ws";
+  const host = apiUrl.host;
   const wsUrl = `${protocol}://${host}${WS_PATH}/${roomId}?token=${state.token}`;
+
+  console.log("Connecting to WebSocket:", wsUrl.replace(state.token, "***"));
 
   // Close existing connection if any
   if (state.websocket) {
@@ -254,6 +294,7 @@ function connectWebSocket(roomId) {
   state.websocket = socket;
 
   socket.addEventListener("open", () => {
+    console.log("WebSocket connected successfully");
     setConnected(true);
     clearNotificationBadge();
   });
@@ -261,9 +302,12 @@ function connectWebSocket(roomId) {
   socket.addEventListener("message", (event) => {
     try {
       const data = JSON.parse(event.data);
+      console.log("WebSocket message received:", data);
       const { event: evt, payload } = data;
       if (evt === "message") {
         // Real-time message - append immediately
+        // This will replace any optimistic message with the same content
+        console.log("Appending real-time message:", payload);
         appendMessage(payload);
       } else if (evt === "system") {
         // Prevent duplicate system messages within 2 seconds
@@ -296,10 +340,20 @@ function connectWebSocket(roomId) {
   });
 
   socket.addEventListener("close", (event) => {
+    console.log("WebSocket closed:", event.code, event.reason);
     setConnected(false);
     state.websocket = null;
+    
+    // Show error message for specific close codes
+    if (event.code === 1008) {
+      showError("Authentication failed. Please log in again.");
+    } else if (event.code !== 1000) {
+      showError(`Connection closed (code: ${event.code})`);
+    }
+    
     // Auto-reconnect if not a normal closure and we still have a room selected
     if (event.code !== 1000 && state.currentRoomId && state.token) {
+      console.log("Attempting to reconnect in 3 seconds...");
       setTimeout(() => {
         if (state.currentRoomId && !state.websocket) {
           connectWebSocket(state.currentRoomId);
@@ -310,17 +364,21 @@ function connectWebSocket(roomId) {
 
   socket.addEventListener("error", (error) => {
     console.error("WebSocket error:", error);
+    console.error("WebSocket URL was:", wsUrl.replace(state.token, "***"));
     setConnected(false);
+    showError("WebSocket connection error. Check console for details.");
   });
 }
 
 async function selectRoom(room) {
+  console.log("Selecting room:", room);
   state.currentRoomId = room.id;
   state.currentRoomName = room.name;
   elements.roomTitle.textContent = room.name;
   elements.roomTopic.textContent = room.topic || "";
   clearNotificationBadge();
   await loadHistory(room.id);
+  console.log("Connecting WebSocket for room:", room.id, "with token:", state.token ? "present" : "missing");
   connectWebSocket(room.id);
 
   document
@@ -377,7 +435,8 @@ async function restoreSession() {
     elements.activeUsername.textContent = savedUser;
     togglePanels(true);
     await loadRooms();
-    // If a room was previously selected, reconnect to it
+    // loadRooms will auto-select General if no room is selected
+    // After loadRooms, check if a room was selected and load its history
     if (state.currentRoomId) {
       await loadHistory(state.currentRoomId);
       connectWebSocket(state.currentRoomId);
@@ -389,11 +448,43 @@ async function handleMessageSubmit(event) {
   event.preventDefault();
   const content = elements.messageInput.value.trim();
   if (!content || !state.websocket || state.websocket.readyState !== WebSocket.OPEN) {
+    if (!state.websocket || state.websocket.readyState !== WebSocket.OPEN) {
+      showError("Not connected. Please wait for connection...");
+    }
     return;
   }
-  state.websocket.send(JSON.stringify({ content, message_type: "text" }));
+  
+  // Clear input immediately for better UX
   elements.messageInput.value = "";
   elements.messageInput.focus();
+  
+  // Optimistically show the message immediately (will be replaced by server response)
+  const tempId = `temp-${Date.now()}`;
+  const optimisticMessage = {
+    id: tempId,
+    room_id: state.currentRoomId,
+    user_id: null,
+    username: state.username,
+    content: content,
+    message_type: "text",
+    file_url: null,
+    mime_type: null,
+    created_at: new Date().toISOString(),
+  };
+  appendMessage(optimisticMessage, { suppressNotify: true });
+  
+  // Send to server
+  try {
+    state.websocket.send(JSON.stringify({ content, message_type: "text" }));
+  } catch (error) {
+    console.error("Error sending message:", error);
+    showError("Failed to send message. Please try again.");
+    // Remove optimistic message on error
+    const messageElement = elements.messages.querySelector(`[data-message-id="${tempId}"]`);
+    if (messageElement) {
+      messageElement.remove();
+    }
+  }
 }
 
 async function handleFileUpload(file) {

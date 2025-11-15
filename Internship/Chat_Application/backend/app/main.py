@@ -192,6 +192,9 @@ async def upload_file(
 
 @app.websocket("/ws/rooms/{room_id}")
 async def websocket_endpoint(websocket: WebSocket, room_id: int) -> None:
+    # Accept the connection first so we can properly close it if needed
+    await websocket.accept()
+    
     token = websocket.query_params.get("token")
     if not token:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -218,7 +221,8 @@ async def websocket_endpoint(websocket: WebSocket, room_id: int) -> None:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 
-        await manager.connect(room_id, websocket)
+        # Add to manager (connection already accepted)
+        manager.active_connections[room_id].add(websocket)
         # Notify others that this user joined (exclude the person who just joined)
         await manager.broadcast(
             room_id,
@@ -265,6 +269,8 @@ async def websocket_endpoint(websocket: WebSocket, room_id: int) -> None:
                 created_at=message.created_at,
             )
 
+            # Broadcast to ALL connections in the room (including sender)
+            # This ensures everyone sees the message in real-time
             await manager.broadcast(
                 room_id,
                 {"event": "message", "payload": message_out.model_dump()},

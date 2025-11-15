@@ -2,7 +2,7 @@
 Weather App package exposing the main application entry point.
 """
 
-from .app import main
+from weather_app.app import main
 
 __all__ = ["main"]
 

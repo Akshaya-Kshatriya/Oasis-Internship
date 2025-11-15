@@ -28,6 +28,12 @@ An advanced graphical weather dashboard built with PyQt6 that shows current cond
    python -m weather_app.app
    ```
 
+   Or from inside the `weather_app` directory:
+
+   ```powershell
+   python app.py
+   ```
+
 3. **Search for weather**
    - Type a location (e.g., `Paris`, `Tokyo`, `10001`) and press Enter or click `Search`.
    - Click `Use Current Location` to detect your location using IP-based geolocation.

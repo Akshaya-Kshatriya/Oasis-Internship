@@ -4,14 +4,18 @@ PyQt-based graphical application that displays weather information.
 
 from __future__ import annotations
 
+import os
 import sys
 from datetime import datetime
 from typing import Optional
 
+# Add parent directory to sys.path to allow absolute imports when run as script
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
 from PyQt6 import QtCore, QtGui, QtWidgets
 
-from .icon_factory import WeatherIconFactory
-from .weather_client import (
+from weather_app.icon_factory import WeatherIconFactory
+from weather_app.weather_client import (
     Location,
     WeatherAPIError,
     WeatherClient,
